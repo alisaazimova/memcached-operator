@@ -1,0 +1,142 @@
+kind: Pod
+apiVersion: v1
+metadata:
+  name: test
+  namespace: memcache-demo-project
+spec:
+  restartPolicy: Always
+  serviceAccountName: memcached-operator-controller-manager
+  imagePullSecrets:
+    - name: memcached-operator-controller-manager-dockercfg-qvpvm
+  priority: 0
+  schedulerName: default-scheduler
+  enableServiceLinks: true
+  terminationGracePeriodSeconds: 10
+  nodeName: ip-192-168-1-221.ec2.internal
+  securityContext:
+    seLinuxOptions:
+      level: 's0:c26,c25'
+    fsGroup: 1000700000
+  containers:
+    - resources:
+        limits:
+          cpu: 500m
+          memory: 128Mi
+        requests:
+          cpu: 5m
+          memory: 64Mi
+      terminationMessagePath: /dev/termination-log
+      name: kube-rbac-proxy
+      securityContext:
+        capabilities:
+          drop:
+            - KILL
+            - MKNOD
+            - SETGID
+            - SETUID
+        runAsUser: 1000700000
+      ports:
+        - name: https
+          containerPort: 8443
+          protocol: TCP
+      imagePullPolicy: IfNotPresent
+      volumeMounts:
+        - name: kube-api-access-9854j
+          readOnly: true
+          mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      terminationMessagePolicy: File
+      image: 'gcr.io/kubebuilder/kube-rbac-proxy:v0.8.0'
+      args:
+        - '--secure-listen-address=0.0.0.0:8443'
+        - '--upstream=http://127.0.0.1:8080/'
+        - '--logtostderr=true'
+        - '--v=0'
+    - resources:
+        limits:
+          cpu: 500m
+          memory: 128Mi
+        requests:
+          cpu: 10m
+          memory: 64Mi
+      readinessProbe:
+        httpGet:
+          path: /readyz
+          port: 8081
+          scheme: HTTP
+        initialDelaySeconds: 5
+        timeoutSeconds: 1
+        periodSeconds: 10
+        successThreshold: 1
+        failureThreshold: 3
+      terminationMessagePath: /dev/termination-log
+      name: manager
+      command:
+        - /manager
+      livenessProbe:
+        httpGet:
+          path: /healthz
+          port: 8081
+          scheme: HTTP
+        initialDelaySeconds: 15
+        timeoutSeconds: 1
+        periodSeconds: 20
+        successThreshold: 1
+        failureThreshold: 3
+      securityContext:
+        capabilities:
+          drop:
+            - KILL
+            - MKNOD
+            - SETGID
+            - SETUID
+        runAsUser: 1000700000
+        allowPrivilegeEscalation: false
+      imagePullPolicy: IfNotPresent
+      volumeMounts:
+        - name: kube-api-access-9854j
+          readOnly: true
+          mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      terminationMessagePolicy: File
+      image: 'docker.io/alisaazi/memcached-operator:2'
+      args:
+        - '--health-probe-bind-address=:8081'
+        - '--metrics-bind-address=127.0.0.1:8080'
+        - '--leader-elect'
+  serviceAccount: memcached-operator-controller-manager
+  volumes:
+    - name: kube-api-access-9854j
+      projected:
+        sources:
+          - serviceAccountToken:
+              expirationSeconds: 3607
+              path: token
+          - configMap:
+              name: kube-root-ca.crt
+              items:
+                - key: ca.crt
+                  path: ca.crt
+          - downwardAPI:
+              items:
+                - path: namespace
+                  fieldRef:
+                    apiVersion: v1
+                    fieldPath: metadata.namespace
+          - configMap:
+              name: openshift-service-ca.crt
+              items:
+                - key: service-ca.crt
+                  path: service-ca.crt
+        defaultMode: 420
+  dnsPolicy: ClusterFirst
+  tolerations:
+    - key: node.kubernetes.io/not-ready
+      operator: Exists
+      effect: NoExecute
+      tolerationSeconds: 300
+    - key: node.kubernetes.io/unreachable
+      operator: Exists
+      effect: NoExecute
+      tolerationSeconds: 300
+    - key: node.kubernetes.io/memory-pressure
+      operator: Exists
+      effect: NoSchedule
